@@ -1,25 +1,13 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
-.env
-# Environment variables (secrets)
+# ==============================
+# Environment Variables
+# ==============================
 .env
 .env.*
+.env.local
 
-# Vector store (auto-generated)
-faiss_index/
-
-# Cached data (auto-generated)
-cached_blog.txt
-
+# ==============================
 # Python
+# ==============================
 __pycache__/
 *.pyc
 *.pyo
@@ -29,25 +17,47 @@ __pycache__/
 dist/
 build/
 
-# Virtual environments
+# ==============================
+# Virtual Environments
+# ==============================
 .venv/
 venv/
 env/
 
+# ==============================
+# Vector Store (Generated)
+# ==============================
+faiss_index/
+
+# ==============================
+# Cached / Temp Files
+# ==============================
+cached_blog.txt
+
+# ==============================
 # UV
+# ==============================
 .uv/
 uv
 uv.lock
 
-# OS
+# ==============================
+# OS Files
+# ==============================
 .DS_Store
 Thumbs.db
 
+# ==============================
 # VS Code
+# ==============================
 .vscode/
 
+# ==============================
 # Logs
+# ==============================
 *.log
 
+# ==============================
 # Jupyter
+# ==============================
 .ipynb_checkpoints/
