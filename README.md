@@ -18,6 +18,11 @@ START → Agent → [Retrieve / End]
              END
 ```
 
+## 🗺️ Graph Visualization
+
+![Agentic RAG Graph](visualization.png)
+
+
 1. **Agent Node** — Decides whether to use the retriever tool or answer directly.
 2. **Retrieve Node** — Fetches relevant chunks from the FAISS vector store.
 3. **Grade Documents Node** — Assesses whether retrieved docs are relevant to the question.
@@ -153,3 +158,4 @@ On first run, the app automatically generates a `visualization.png` of the LangG
 ## 📄 License
 
 MIT License. Feel free to use, modify, and distribute.
+
