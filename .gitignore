@@ -9,3 +9,43 @@ wheels/
 # Virtual environments
 .venv
 .env
+# Environment variables (secrets)
+.env
+.env.*
+
+# Vector store (auto-generated)
+faiss_index/
+
+# Cached data (auto-generated)
+cached_blog.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# UV
+.uv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
