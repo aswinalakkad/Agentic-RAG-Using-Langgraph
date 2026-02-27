@@ -1,75 +1,83 @@
-# 🤖 Agentic RAG API
+# 🤖 Agentic RAG with LangGraph + FastAPI
 
-![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat&logo=fastapi&logoColor=white)
-![LangGraph](https://img.shields.io/badge/LangGraph-latest-4B8BBE?style=flat)
-![Groq](https://img.shields.io/badge/LLM-Groq%20Llama%203.3-F55036?style=flat)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat)
-
-A production-ready **Agentic Retrieval-Augmented Generation (RAG)** system built with LangGraph, FastAPI, and Groq. The agent intelligently routes queries, retrieves relevant documents, grades their relevance, and rewrites queries when needed — all in a single, streamlined graph.
+An intelligent **Retrieval-Augmented Generation (RAG)** system built with LangGraph, LangChain, FastAPI, and Groq LLMs. This agent dynamically decides whether to retrieve external knowledge, rewrite ambiguous questions, or answer directly — all through a structured graph-based workflow.
 
 ---
 
-## 🏗️ Architecture
+## 🧠 How It Works
+
+The system uses a **LangGraph state machine** to route each query through the most appropriate pipeline:
 
 ```
-User Query
-    │
-    ▼
-Intent Router ──── (no tool needed) ──────────────────► Direct Answer (END)
-    │
-    │ (tool call)
-    ▼
-Vector Retriever (FAISS)
-    │
-    ▼
-Relevance Evaluator
-    │                    │
-    ▼ (relevant)         ▼ (not relevant)
-RAG Generator       Query Optimizer
-    │                    │
-    ▼                    └──► Intent Router (retry)
-  END
+START → Agent → [Retrieve / End]
+                   ↓
+              Grade Documents
+               ↙         ↘
+          Generate       Rewrite → Agent
+              ↓
+             END
 ```
-## 🗺️ Graph Visualization
 
-![Agentic RAG Graph](visualization.png)
+1. **Agent Node** — Decides whether to use the retriever tool or answer directly.
+2. **Retrieve Node** — Fetches relevant chunks from the FAISS vector store.
+3. **Grade Documents Node** — Assesses whether retrieved docs are relevant to the question.
+4. **Generate Node** — Produces a final answer using the retrieved context.
+5. **Rewrite Node** — Reformulates unclear questions for better retrieval.
 
+---
 
-**Key nodes:**
-- **Intent Router** — decides whether to use RAG or answer directly
-- **Vector Retriever** — performs semantic search over the FAISS index
-- **Relevance Evaluator** — grades whether retrieved docs match the query
-- **Query Optimizer** — rewrites unclear queries and retries retrieval
-- **RAG Generator** — synthesizes a grounded answer from context
+## 🛠️ Tech Stack
+
+| Component | Tool |
+|---|---|
+| LLM | Groq (`llama-3.3-70b-versatile`, `Gemma2-9b-It`) |
+| Embeddings | HuggingFace (`all-MiniLM-L6-v2`) |
+| Vector Store | FAISS |
+| Orchestration | LangGraph |
+| API Framework | FastAPI |
+| Document Loading | LangChain WebBaseLoader |
+
+---
+
+## 📁 Project Structure
+
+```
+├── main.py                  # FastAPI app + LangGraph pipeline
+├── cached_blog.txt          # Cached document content (auto-generated)
+├── faiss_index/             # Persisted FAISS vector store (auto-generated)
+├── visualization.png        # LangGraph DAG visualization (auto-generated)
+├── .env                     # Environment variables
+└── requirements.txt         # Python dependencies
+```
 
 ---
 
 ## 🚀 Getting Started
 
-### Prerequisites
-
-- Python 3.9+
-- A [Groq API key](https://console.groq.com/)
-
-### Installation
+### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
-cd agentic-rag
+git clone https://github.com/your-username/your-repo-name.git
+cd your-repo-name
+```
 
+### 2. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### Environment Setup
+### 3. Set Up Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the root directory:
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
-### Run the API
+Get your free Groq API key at [console.groq.com](https://console.groq.com).
+
+### 4. Run the Server
 
 ```bash
 uvicorn main:app --reload
@@ -82,19 +90,17 @@ The API will be available at `http://localhost:8000`.
 ## 📡 API Endpoints
 
 ### `GET /`
-Health check.
+Health check — confirms the API is running.
 
 **Response:**
 ```json
-{ "message": "Agentic RAG API running 🚀" }
+{ "message": "Agentic RAG API is running 🚀" }
 ```
 
----
-
 ### `POST /chat`
-Send a question to the RAG agent.
+Send a message to the RAG agent.
 
-**Request body:**
+**Request Body:**
 ```json
 { "message": "What is an AI agent?" }
 ```
@@ -106,102 +112,44 @@ Send a question to the RAG agent.
 
 ---
 
-## 🧱 Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| API Framework | FastAPI |
-| Agent Orchestration | LangGraph |
-| LLM | Groq (`llama-3.3-70b-versatile`) |
-| Embeddings | HuggingFace (`all-MiniLM-L6-v2`) |
-| Vector Store | FAISS |
-| Document Loader | LangChain WebBaseLoader |
-
----
-
-## 📁 Project Structure
-
-```
-.
-├── main.py               # Application entry point
-├── cached_blog.txt       # Cached blog content (auto-generated)
-├── faiss_index/          # Persisted FAISS vector index (auto-generated)
-├── .env                  # Environment variables
-└── requirements.txt      # Python dependencies
-```
-
----
-
-## ⚙️ Configuration
-
-| Variable | Location | Description |
-|----------|----------|-------------|
-| `GROQ_API_KEY` | `.env` | Groq API authentication key |
-| `BLOG_URL` | `main.py` | Source URL for the knowledge base |
-| `chunk_size` | `main.py` | Text splitter chunk size (default: 300) |
-| `chunk_overlap` | `main.py` | Chunk overlap (default: 50) |
-
-### Swapping the Knowledge Base
-
-To use a different data source, update `BLOG_URL` in `main.py` and delete `cached_blog.txt` and `faiss_index/` to trigger a fresh index build.
-
----
-
 ## 📦 Requirements
+
+Create a `requirements.txt` with:
 
 ```
 fastapi
 uvicorn
 python-dotenv
-langgraph
-langchain-core
+langchain
 langchain-community
-langchain-text-splitters
-langchain-huggingface
 langchain-groq
+langchain-huggingface
+langchain-text-splitters
+langgraph
 faiss-cpu
+sentence-transformers
+pillow
 pydantic
 ```
 
 ---
 
-## 📝 Notes
+## 🔍 Knowledge Base
 
-- The blog content and FAISS index are cached locally on first run to avoid redundant downloads and embedding computation.
-- The relevance grader uses structured output with Pydantic to enforce binary `yes/no` scoring.
-- Follow-up questions (multi-turn) bypass the retriever and are answered directly by the LLM.
+By default, the agent is grounded in this article:
 
----
+> [What is an AI Agent? Complete Beginner Guide with Python (2026)](https://medium.com/@metafluxtech/what-is-an-ai-agent-complete-beginner-guide-with-python-2026-60ebd5085375)
 
-## 🙈 .gitignore
-
-Make sure to add the following to your `.gitignore` before pushing:
-
-```
-.env
-cached_blog.txt
-faiss_index/
-__pycache__/
-*.pyc
-.DS_Store
-```
+To use your own document, replace the URL in `WebBaseLoader(...)` inside `main.py` and delete the `cached_blog.txt` and `faiss_index/` directory to force a rebuild.
 
 ---
 
-## 🤝 Contributing
+## 🗺️ Graph Visualization
 
-Contributions are welcome! To get started:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Commit your changes: `git commit -m 'Add your feature'`
-4. Push to the branch: `git push origin feature/your-feature`
-5. Open a Pull Request
+On first run, the app automatically generates a `visualization.png` of the LangGraph DAG so you can see the full agent flow.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-
+MIT License. Feel free to use, modify, and distribute.
