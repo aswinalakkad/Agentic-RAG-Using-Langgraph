@@ -33,7 +33,7 @@ RAG Generator       Query Optimizer
 ```
 ## 🗺️ Graph Visualization
 
-![Agentic RAG Graph](assets/visualization.png)
+![Agentic RAG Graph](visualization.png)
 
 
 **Key nodes:**
@@ -203,4 +203,5 @@ Contributions are welcome! To get started:
 ## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
 
