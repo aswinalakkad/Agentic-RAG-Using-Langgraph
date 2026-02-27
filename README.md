@@ -31,6 +31,10 @@ RAG Generator       Query Optimizer
     ▼                    └──► Intent Router (retry)
   END
 ```
+## 🗺️ Graph Visualization
+
+![Agentic RAG Graph](assets/visualization.png)
+
 
 **Key nodes:**
 - **Intent Router** — decides whether to use RAG or answer directly
@@ -199,3 +203,4 @@ Contributions are welcome! To get started:
 ## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
