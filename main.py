@@ -1,59 +1,38 @@
-# ==========================================================
-#                AGENTIC RAG - CLEAN VERSION
-# ==========================================================
-
-# =======================
-# 1️⃣ Imports
-# =======================
-import os
-import logging
-import warnings
-from pathlib import Path
-from typing import Annotated, Sequence, TypedDict, Literal, Optional
-
+# === Imports and Setup ===
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from pathlib import Path
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Annotated, Sequence, TypedDict, Literal
+from PIL import Image
+import os
+import warnings
 
-from langgraph.graph import StateGraph, START, END
+# LangGraph and LangChain components
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
-
-from langchain_core.messages import (
-    BaseMessage,
-    HumanMessage,
-    AIMessage
-)
-from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import create_retriever_tool
-from langchain_core.documents import Document
-
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import WebBaseLoader
-
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.documents import Document
 from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
 
-
-# =======================
-# 2️⃣ Setup
-# =======================
 warnings.filterwarnings("ignore")
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# === FastAPI Setup ===
+app = FastAPI()
 
-
-# =======================
-# 3️⃣ FastAPI App
-# =======================
-app = FastAPI(title="Agentic RAG API")
-
+# Enable CORS for local/frontend development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,286 +41,206 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# =======================
-# 4️⃣ Load Models Once
-# =======================
-LLM_MAIN = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0,
-)
-
-LLM_GRADER = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0,
-)
-
-EMBEDDINGS = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2"
-)
+# === Load LLM and Embeddings ===
+groq_api_key = os.getenv("GROQ_API_KEY")
+llm = ChatGroq(model_name="Gemma2-9b-It", temperature=0, streaming=True)
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 
-# =======================
-# 5️⃣ RAG Setup
-# =======================
-
-BLOG_URL = "https://medium.com/@metafluxtech/what-is-an-ai-agent-complete-beginner-guide-with-python-2026-60ebd5085375"
+# RAG Implementation
+# === Load and Process Document ===
 CACHE_FILE = "cached_blog.txt"
+
+# If already cached, read the file
+if Path(CACHE_FILE).exists():
+    with open(CACHE_FILE, "r", encoding="utf-8") as f:
+        raw_content = f.read()
+else:
+    # Otherwise, load from the web
+    docs = WebBaseLoader("https://medium.com/@metafluxtech/what-is-an-ai-agent-complete-beginner-guide-with-python-2026-60ebd5085375").load()
+    raw_content = docs[0].page_content
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        f.write(raw_content)
+
+# === Split document into chunks for vector search ===
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=25)
+doc_splits = text_splitter.split_documents([Document(page_content=raw_content)])
+
+# === Vector Store Setup with FAISS ===
 VECTOR_DIR = "faiss_index"
-
-
-def load_blog_content():
-    if Path(CACHE_FILE).exists():
-        logger.info("Loading blog from cache...")
-        return Path(CACHE_FILE).read_text(encoding="utf-8")
-
-    logger.info("Downloading blog...")
-    docs = WebBaseLoader(BLOG_URL).load()
-    content = docs[0].page_content
-
-    Path(CACHE_FILE).write_text(content, encoding="utf-8")
-    return content
-
-
-def create_vectorstore():
-    raw_text = load_blog_content()
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=50
-    )
-
-    documents = splitter.split_documents(
-        [Document(page_content=raw_text)]
-    )
-
-    if os.path.exists(f"{VECTOR_DIR}/index.faiss"):
-        logger.info("Loading existing FAISS index...")
-        return FAISS.load_local(
-            VECTOR_DIR,
-            EMBEDDINGS,
-            allow_dangerous_deserialization=True
-        )
-
-    logger.info("Creating FAISS index...")
-    vectorstore = FAISS.from_documents(documents, EMBEDDINGS)
+if os.path.exists(f"{VECTOR_DIR}/index.faiss"):
+    vectorstore = FAISS.load_local(VECTOR_DIR, embeddings, allow_dangerous_deserialization=True)
+else:
+    vectorstore = FAISS.from_documents(doc_splits, embedding=embeddings)
     vectorstore.save_local(VECTOR_DIR)
-    return vectorstore
 
-
-VECTORSTORE = create_vectorstore()
-RETRIEVER = VECTORSTORE.as_retriever()
-
-RETRIEVER_TOOL = create_retriever_tool(
-    RETRIEVER,
-    "ai_agent_knowledge_base_search",
-    "Search knowledge base about AI agents"
+# === Create Retrieval Tool for LangGraph ===
+retriever = vectorstore.as_retriever()
+retriever_tool = create_retriever_tool(
+    retriever,
+    "retrieve_blog_posts",
+    "this is related ai agents blogs",
 )
 
-TOOLS = [RETRIEVER_TOOL]
 
+tools = [retriever_tool]
 
-# =======================
-# 6️⃣ State Definition
-# =======================
-class ConversationState(TypedDict):
+# === Define LangGraph State ===
+class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
-    retrieved_context: Optional[str]
 
-
-# =======================
-# 7️⃣ Relevance Grader
-# =======================
-class RelevanceScore(BaseModel):
+# === Grading Node for Document Relevance ===
+class GradeOutput(BaseModel):
     binary_score: str = Field(description="'yes' or 'no'")
 
-
-def relevance_evaluator(state: ConversationState) -> Literal["rag_generator", "query_optimizer"]:
-    logger.info("Entering relevance evaluator node")
-
-    question = state["messages"][0].content
-    context = state["messages"][-1].content
+# Determine whether to use retrieved context or not
+def grade_documents(state) -> Literal["generate", "rewrite"]:
+    print("=== [NODE: RETRIEVE] ===")
+    model = ChatGroq(temperature=0, model="llama-3.3-70b-versatile").with_structured_output(GradeOutput)
+    messages = state["messages"]
+    question = messages[0].content
+    context = messages[-1].content
 
     prompt = PromptTemplate(
-        template="""
-You are a grader assessing document relevance.
+        template="""You are a grader assessing relevance of a retrieved document to a user question.
+                    Document:
+                    {context}
+                    Question: {question}
+                    Is the document relevant? Answer 'yes' or 'no'.""",
+                            input_variables=["context", "question"]
+                        )
 
-Document:
-{context}
+    result = (prompt | model).invoke({"context": context, "question": question})
+    if result.binary_score == "yes":
+        print("=== [DECISION: DOCS RELEVANT] ===")
+        return "generate"
+    else:
+        print("=== [DECISION: DOCS NOT RELEVANT] ===")
+        return "rewrite"
 
-Question:
-{question}
-
-Is the document relevant? Answer only 'yes' or 'no'.
-""",
-        input_variables=["context", "question"],
-    )
-
-    model = LLM_GRADER.with_structured_output(RelevanceScore)
-    result = (prompt | model).invoke(
-        {"context": context, "question": question}
-    )
-
-    if result.binary_score.lower() == "yes":
-        return "rag_generator"
-
-    return "query_optimizer"
-
-
-# =======================
-# 8️⃣ Intent Router Node
-# =======================
-def intent_router(state: ConversationState):
-    logger.info("Entering intent router node")
-
+# === Main Agent Node ===
+def agent(state):
+    print("=== [NODE: AGENT] ===")
     messages = state["messages"]
+    llm = ChatGroq(temperature=0, model="llama-3.3-70b-versatile")
 
-    # First message → allow tool usage
-    if len(messages) == 1:
-        llm_with_tools = LLM_MAIN.bind_tools(TOOLS)
-        response = llm_with_tools.invoke(messages)
+    # If follow-up, use concise format
+    if len(messages) > 1:
+        last_message = messages[-1]
+        question = last_message.content
+
+        prompt = PromptTemplate(
+            template="""You are a concise assistant. 
+                        Only answer the question directly in one sentence or less. 
+                        Do NOT explain, expand, reflect, or rephrase.
+                        Make sure to give little details about the question, don't answer in single line.
+                        Question: {question}""",
+            input_variables=["question"]
+        )
+
+        chain = prompt | llm
+        response = chain.invoke({"question": question})
+        return {"messages": [AIMessage(content=response.content)]}
+    else:
+        # First-time user message, allow tools
+        llm_with_tool = llm.bind_tools(tools)
+        response = llm_with_tool.invoke(messages)
         return {"messages": [response]}
 
-    # Follow-up question → direct answer
-    last_question = messages[-1].content
+# === Rewrite Node to Improve User's Question ===
+def rewrite(state):
+    print("=== [NODE: REWRITE] ===")
+    messages = state["messages"]
+    question = messages[0].content
+
+    msg = [
+        HumanMessage(
+            content=f"""\n 
+                    Look at the input and try to reason about the underlying semantic intent / meaning and make the question more detailed. \n 
+                    Here is the initial question:
+                    \n ------- \n
+                    {question} 
+                    \n ------- \n
+                    Formulate an improved question: """,
+                    )
+    ]
+    model = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, streaming=True)
+    return {"messages": [model.invoke(msg)]}
+
+# === Generate Answer from Context ===
+def generate(state):
+    print("=== [NODE: GENERATE] ===")
+    messages = state["messages"]
+    question = messages[0].content
+    docs = messages[-1].content
 
     prompt = PromptTemplate(
-        template="""
-Answer the question concisely but clearly.
-
-Question: {question}
-""",
-        input_variables=["question"],
-    )
-
-    response = (prompt | LLM_MAIN).invoke(
-        {"question": last_question}
-    )
-
-    return {"messages": [AIMessage(content=response.content)]}
-
-
-# =======================
-# 9️⃣ Query Rewrite Node
-# =======================
-def query_optimizer(state: ConversationState):
-    logger.info("Entering query optimizer node")
-
-    question = state["messages"][0].content
-
-    prompt = PromptTemplate(
-        template="""
-Improve the following question to make it clearer and more detailed:
-
-{question}
-""",
-        input_variables=["question"],
-    )
-
-    improved_question = (prompt | LLM_MAIN).invoke(
-        {"question": question}
-    )
-
-    return {"messages": [HumanMessage(content=improved_question.content)]}
-
-
-# =======================
-# 🔟 RAG Generator Node
-# =======================
-def rag_generator(state: ConversationState):
-    logger.info("Entering RAG generation node")
-
-    question = state["messages"][0].content
-    context = state["messages"][-1].content
-
-    prompt = PromptTemplate(
-        template="""
-You are a helpful assistant.
-
-Use the context below to answer the question.
-
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-""",
         input_variables=["context", "question"],
-    )
+        template="""
+                    You are a helpful assistant. Use the context below to answer the question.
+                    
+                    Context:
+                    ---------
+                    {context}
+                    ---------
+                    
+                    Question: {question}
+                    Answer:
+                    """
+                            )
 
-    response = (prompt | LLM_MAIN | StrOutputParser()).invoke(
-        {"context": context, "question": question}
-    )
+    llm_gen = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, streaming=True)
+    response = (prompt | llm_gen | StrOutputParser()).invoke({"context": docs, "question": question})
+    return {"messages": [response]}
 
-    return {"messages": [AIMessage(content=response)]}
+# === LangGraph Flow Definition ===
+workflow = StateGraph(AgentState)
 
+# Define Nodes
+workflow.add_node("agent", agent)
+workflow.add_node("retrieve", ToolNode([retriever_tool]))
+workflow.add_node("rewrite", rewrite)
+workflow.add_node("generate", generate)
 
-# =======================
-# 1️⃣1️⃣ Build Graph
-# =======================
-workflow = StateGraph(ConversationState)
+# Define Edges / Flow Logic
+workflow.add_edge(START, "agent")
+workflow.add_conditional_edges("agent", tools_condition, {"tools": "retrieve", END: END})
+workflow.add_conditional_edges("retrieve", grade_documents)
+workflow.add_edge("generate", END)
+workflow.add_edge("rewrite", "agent")
 
-workflow.add_node("intent_router", intent_router)
-workflow.add_node("vector_retriever", ToolNode([RETRIEVER_TOOL]))
-workflow.add_node("relevance_evaluator", relevance_evaluator)
-workflow.add_node("query_optimizer", query_optimizer)
-workflow.add_node("rag_generator", rag_generator)
+# Compile the graph
+graph = workflow.compile()
 
-workflow.add_edge(START, "intent_router")
+# === Visualize the LangGraph DAG (only once) ===
+if not Path("visualization.png").exists():
+    image_data = graph.get_graph().draw_mermaid_png()
+    with open("visualization.png", "wb") as f:
+        f.write(image_data)
 
-workflow.add_conditional_edges(
-    "intent_router",
-    tools_condition,
-    {"tools": "vector_retriever", END: END},
-)
-
-workflow.add_conditional_edges(
-    "vector_retriever",
-    relevance_evaluator,
-)
-
-workflow.add_edge("rag_generator", END)
-workflow.add_edge("query_optimizer", "intent_router")
-
-GRAPH = workflow.compile()
-
-
-# =======================
-# 1️⃣2️⃣ API Schema
-# =======================
+# === API Schemas ===
 class Query(BaseModel):
     message: str
 
+# === FastAPI Endpoints ===
 
-# =======================
-# 1️⃣3️⃣ API Endpoints
-# =======================
+# Serve HTML UI
 @app.get("/")
 async def root():
-    return {"message": "Agentic RAG API running 🚀"}
+    return {"message": "Agentic RAG API is running 🚀"}
 
-
+# Main chat endpoint
 @app.post("/chat")
 async def chat_endpoint(query: Query):
     try:
-        logger.info("Starting graph execution")
-
-        events = GRAPH.stream(
-            {"messages": [HumanMessage(content=query.message)]},
-            stream_mode="values",
-        )
-
-        final_response = ""
+        print("******** FLOW ********")
+        print("=== [START] ===")
+        # Run LangGraph pipeline
+        events = graph.stream({"messages": [HumanMessage(content=query.message)]}, stream_mode="values")
+        response = ""
         for event in events:
-            final_response = event["messages"][-1].content
-
-        return JSONResponse(content={"response": final_response})
-
+            response = event["messages"][-1].content
+        print("=== [END] ===")
+        return JSONResponse(content={"response": response})
     except Exception as e:
-        logger.error(str(e))
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
+        return JSONResponse(status_code=500, content={"error": str(e)})
