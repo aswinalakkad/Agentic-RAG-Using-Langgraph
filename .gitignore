@@ -37,7 +37,7 @@ env/
 # UV
 .uv/
 uv
-uv-lock
+uv.lock
 
 # OS
 .DS_Store
